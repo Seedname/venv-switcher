@@ -1,95 +1,98 @@
 venv() {
-    # Initialize variables
-    create_and_activate=false
-    remove=false
-    list_envs=false
-    venv_name=""
-
-    # Parse command line arguments
-    while (( $# > 0 )); do
-        case $1 in
-            --new|-n)
-                create_and_activate=true
-                shift
-                ;;
-            --remove|-rm)
-                remove=true
-                shift
-                ;;
-            --list|-l)
-                list_envs=true
-                shift
-                ;;
-            *)
-                if [[ -z $venv_name ]]; then
-                    venv_name=$1
-                else
-                    echo "Error: Multiple virtual environment names provided."
-                    return 1
-                fi
-                shift
-                ;;
-        esac
-    done
-
-    # If the list flag is set, list all virtual environments and exit
-    if [[ $list_envs == true ]]; then
-        if [[ -d ~/.venv ]]; then
-            ls -1 ~/.venv/
-        else
-            echo "No virtual environments found."
-        fi
+    if [[ $# -eq 0 || $1 == "-h" || $1 == "--help" ]]; then
+        cat <<EOF
+Usage:
+  venv -n/--new VENV_NAME         Create new virtual environment in ~/.venv and switch to it
+  venv -l/--list                  List virtual environments
+  venv -rm/--remove VENV_NAME     Remove virtual environment & deactivate if currently in environment
+  venv VENV_NAME                  Switch to virtual environment. Deactivate if currently in environment
+EOF
         return 0
     fi
 
-    # Check if venv_name is provided (unless removing)
-    if [[ -z $venv_name && $remove != true ]]; then
+    local base_dir="$HOME/.venv"
+    mkdir -p "$base_dir"
+
+    local action=""
+    if [[ $1 == -* ]]; then
+        case $1 in
+            -l|--list)
+                action="list"
+                ;;
+            -n|--new)
+                action="new"
+                ;;
+            -rm|--remove)
+                action="remove"
+                ;;
+            *)
+                echo "Unknown option: $1"
+                return 1
+                ;;
+        esac
+        shift
+    else
+        action="switch"
+    fi
+
+    if [[ $action != "list" && $# -eq 0 ]]; then
         echo "Error: No virtual environment name provided."
         return 1
     fi
 
-    # Set virtual environment directory
-    venv_dir=~/.venv/$venv_name
+    local venv_path
+    if [[ $action != "list" ]]; then
+        venv_path="$base_dir/$1"
+    fi
 
-    # Handle removal
-    if [[ $remove == true ]]; then
-        if [[ -d $venv_dir ]]; then
-            # Check if the virtual environment is currently active
-            if [[ $VIRTUAL_ENV == "$venv_dir" ]]; then
+    case $action in
+        list)
+            if [[ -d "$base_dir" ]]; then
+                ls -1 "$base_dir"
+            else
+                echo "No virtual environments found."
+            fi
+            ;;
+        new)
+            if [[ -d "$venv_path" ]]; then
+                echo "Virtual environment already exists."
+            else
+                python3 -m venv "$venv_path" && echo "Virtual environment created."
+            fi
+            source "$venv_path/bin/activate"
+            ;;
+        remove)
+            if [[ -d "$venv_path" ]]; then
+                if [[ "$VIRTUAL_ENV" == "$venv_path" ]]; then
+                    deactivate
+                    echo "Virtual environment deactivated."
+                fi
+                rm -rf "$venv_path"
+                echo "Virtual environment removed."
+            else
+                echo "Virtual environment does not exist."
+            fi
+            ;;
+        switch)
+            if [[ "$VIRTUAL_ENV" == "$venv_path" ]]; then
                 deactivate
                 echo "Virtual environment deactivated."
+            elif [[ -d "$venv_path" ]]; then
+                source "$venv_path/bin/activate"
+            else
+                echo "Virtual environment does not exist. Make a new one? [y/N] "
+                read response
+                if [[ $response =~ ^[Yy]$ ]]; then
+                    python3 -m venv "$venv_path" && echo "Virtual environment created."
+                    source "$venv_path/bin/activate"
+                else
+                    echo "No action taken."
+                fi
             fi
-            rm -rf "$venv_dir"
-            echo "Virtual environment removed."
-        else
-            echo "Virtual environment does not exist."
-        fi
-        return 0
-    fi
-
-    # Handle creation and activation with --new or -n
-    if [[ $create_and_activate == true ]]; then
-        if [[ -d $venv_dir ]]; then
-            echo "Virtual environment already exists."
-        else
-            python3 -m venv "$venv_dir"
-            echo "Virtual environment created."
-        fi
-        source "$venv_dir/bin/activate"
-    # Check if virtual environment exists and activate it
-    elif [[ -d $venv_dir ]]; then
-        source "$venv_dir/bin/activate"
-    # If it doesn't exist, prompt to create
-    else
-        echo "Virtual Environment does not exist. Make a new one? [y/N] "
-        read response
-        if [[ $response =~ ^[Yy]$ ]]; then
-            python3 -m venv "$venv_dir"
-            echo "Virtual environment created."
-            source "$venv_dir/bin/activate"
-        else
-            echo "No action taken."
-            return 0
-        fi
-    fi
+            ;;
+        *)
+            echo "Invalid action."
+            return 1
+            ;;
+    esac
 }
